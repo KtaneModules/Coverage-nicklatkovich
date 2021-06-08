@@ -1,7 +1,12 @@
-﻿using UnityEngine;
+﻿using System.Collections;
+using System.Linq;
+using System.Text.RegularExpressions;
+using UnityEngine;
 
 public class CoverageModule : MonoBehaviour {
 	private static int moduleIdCounter = 1;
+
+	public readonly string TwitchHelpMessage = "\"!{0} submit 01\" - submit answer. Should be 2-digits answer. Word \"submit\" is optional";
 
 	public TextMesh ScreenText;
 	public Renderer BackgroundRenderer;
@@ -86,6 +91,7 @@ public class CoverageModule : MonoBehaviour {
 	}
 
 	private void Submit() {
+		if (!activated) return;
 		if (answer.Length < 2) return;
 		if (answer != expectedAnswer.ToString().PadLeft(2, '0')) {
 			Debug.LogFormat("[Coverage #{0}] Submitted: {1}. Strike", moduleId, answer);
@@ -96,6 +102,41 @@ public class CoverageModule : MonoBehaviour {
 			Needy.HandlePass();
 			ScreenText.text = "";
 			OnNeedyDeactivation();
+		}
+	}
+
+	public IEnumerator ProcessTwitchCommand(string command) {
+		command = command.Trim().ToLower();
+		if (command.StartsWith("submit ")) command = command.Split(' ').Skip(1).Join(" ");
+		if (Regex.IsMatch(command, @"^\d+$")) {
+			if (command.Length != 2) {
+				yield return "sendtochat {0}, !{1} should be 2-digits answer";
+				yield break;
+			}
+			yield return null;
+			if (!activated) {
+				yield return "sendtochat {0}, !{1} not activated";
+				yield break;
+			}
+			while (answer != command.Substring(0, answer.Length)) yield return new[] { ClearButton };
+			if (answer.Length == 0) yield return new[] { Numbers[command[0] - '0'] };
+			if (answer.Length == 1) yield return new[] { Numbers[command[1] - '0'] };
+			yield return new[] { SubmitButton };
+			yield break;
+		}
+	}
+
+	private IEnumerator TwitchHandleForcedSolve() {
+		yield return null;
+		if (!activated) yield break;
+		IEnumerator action = ProcessTwitchCommand(expectedAnswer.ToString().PadLeft(2, '0'));
+		while (action.MoveNext()) {
+			KMSelectable[] selectables = action.Current as KMSelectable[];
+			if (selectables == null) continue;
+			foreach (KMSelectable selectable in selectables) {
+				selectable.OnInteract();
+				yield return new WaitForSeconds(.1f);
+			}
 		}
 	}
 
